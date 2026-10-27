@@ -1,7 +1,7 @@
 // Berkay Samet Aygunduz 251ADB082
 // https://github.com/mohammond/calc-lab-home
 // Compile with: gcc -O2 -Wall -Wextra -std=c17 -o calc calc.c -lm
-// Resources used: geeksforgeeks.org, https://www.learn-c.org/, Chatgpt 
+// Resources used: geeksforgeeks.org, https://www.learn-c.org/, OpenAI ChatGPT.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -9,6 +9,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <errno.h>
+#include <math.h>
 
 // A wrong command is a program error, so the message goes to stderr.
 // Returning 1 gives the non-zero exit code required by the task.
@@ -94,8 +95,17 @@ char *read_file(char *file, size_t *length)
     return text;
 }
 
-// Positions are indexes in the original file and start from zero.
-// Error messages add one because the task uses positions starting from one.
+// The type is kept with the value so integer division still works as in C.
+// A calculation uses double only when at least one operand is a float.
+typedef struct
+{
+    int is_float;
+    long long integer;
+    double real;
+} Value;
+
+// Indexes use the original file, including comments and newlines.
+// Adding one gives the positions required by the task.
 char *text_data;
 size_t pos;
 size_t line_end;
@@ -104,17 +114,12 @@ size_t error_pos;
 enum { TOKEN_END, TOKEN_NUMBER, TOKEN_POWER, TOKEN_INVALID };
 
 int token;
-
-// This version uses long long for all numbers.
-// Float support will be added in the next step.
-long long token_value;
-
+Value token_value;
 size_t token_pos;
 
-long long parse_expression(void);
+Value parse_expression(void);
 
 // Only spaces and tabs are skipped because a newline ends an expression.
-// Skipping changes the position but does not remove characters from the text.
 void skip_spaces(void)
 {
     while (pos < line_end &&
@@ -124,9 +129,8 @@ void skip_spaces(void)
     }
 }
 
-// The token start is saved before reading its characters.
-// Errors can use this position after the parser moves to the next token.
-// Two stars are read together because ** is one operator.
+// Saving the token start lets errors use it after the parser moves forward.
+// Numbers are checked before conversion so .5, 5. and 1.5e3 are not accepted.
 void next_token(void)
 {
     skip_spaces();
@@ -141,13 +145,59 @@ void next_token(void)
     if (text_data[pos] >= '0' && text_data[pos] <= '9')
     {
         token = TOKEN_NUMBER;
-        token_value = 0;
+        token_value = (Value){0, 0, 0.0};
 
         while (pos < line_end &&
                text_data[pos] >= '0' && text_data[pos] <= '9')
         {
-            token_value = token_value * 10 + (text_data[pos] - '0');
             pos++;
+        }
+
+        if (pos < line_end && text_data[pos] == '.')
+        {
+            size_t dot = pos;
+            pos++;
+
+            if (pos == line_end ||
+                text_data[pos] < '0' || text_data[pos] > '9')
+            {
+                token = TOKEN_INVALID;
+                error_pos = dot + 1;
+                return;
+            }
+
+            token_value.is_float = 1;
+
+            while (pos < line_end &&
+                   text_data[pos] >= '0' && text_data[pos] <= '9')
+            {
+                pos++;
+            }
+        }
+
+        if (token_value.is_float)
+        {
+            // Stop strtod at the checked number, then restore the character.
+            // This avoids copying tokens and stops it from reading an exponent.
+            char saved = text_data[pos];
+            text_data[pos] = '\0';
+            token_value.real = strtod(text_data + token_pos, NULL);
+            text_data[pos] = saved;
+
+            if (!isfinite(token_value.real))
+            {
+                token = TOKEN_INVALID;
+                error_pos = token_pos + 1;
+            }
+        }
+        else
+        {
+            // Integer tokens stay long long so large integers keep their value.
+            for (size_t i = token_pos; i < pos; i++)
+            {
+                token_value.integer = token_value.integer * 10
+                                      + (text_data[i] - '0');
+            }
         }
 
         return;
@@ -168,25 +218,138 @@ void next_token(void)
     }
     else
     {
-        // An unknown character is where reading cannot continue.
         token = TOKEN_INVALID;
         error_pos = token_pos + 1;
     }
 }
 
-// Brackets call parse_expression so everything inside is calculated first.
-// A missing ')' is reported at the next token or the end of the line.
-// An operator cannot start here because unary operators are not allowed.
-long long parse_primary(void)
+// Conversion happens only when a float operation needs it.
+// Integer-only calculations do not lose precision through double.
+double as_double(Value value)
 {
+    if (value.is_float)
+    {
+        return value.real;
+    }
+
+    return (double)value.integer;
+}
+
+// Integer operands keep integer arithmetic; either float makes a double result.
+// Zero division uses the right operand's start, including an opening bracket.
+// A non-finite float result uses the operator because that operation failed.
+Value calculate(Value left, Value right, int op,
+                size_t operator_start, size_t right_start)
+{
+    Value result = {0, 0, 0.0};
+
+    if (op == '/' &&
+        ((right.is_float && right.real == 0.0) ||
+         (!right.is_float && right.integer == 0)))
+    {
+        error_pos = right_start + 1;
+        return result;
+    }
+
+    if (left.is_float || right.is_float)
+    {
+        double a = as_double(left);
+        double b = as_double(right);
+        result.is_float = 1;
+
+        if (op == '+')
+        {
+            result.real = a + b;
+        }
+        else if (op == '-')
+        {
+            result.real = a - b;
+        }
+        else if (op == '*')
+        {
+            result.real = a * b;
+        }
+        else if (op == '/')
+        {
+            result.real = a / b;
+        }
+        else
+        {
+            result.real = pow(a, b);
+        }
+
+        if (!isfinite(result.real))
+        {
+            error_pos = operator_start + 1;
+        }
+
+        return result;
+    }
+
+    if (op == '+')
+    {
+        result.integer = left.integer + right.integer;
+    }
+    else if (op == '-')
+    {
+        result.integer = left.integer - right.integer;
+    }
+    else if (op == '*')
+    {
+        result.integer = left.integer * right.integer;
+    }
+    else if (op == '/')
+    {
+        result.integer = left.integer / right.integer;
+    }
+    else
+    {
+        if (right.integer < 0)
+        {
+            error_pos = right_start + 1;
+            return result;
+        }
+
+        long long base = left.integer;
+        long long exponent = right.integer;
+        result.integer = 1;
+
+        // Squaring the base needs fewer steps than multiplying exponent times.
+        // Starting with 1 also handles x**0, including 0**0.
+        while (exponent > 0)
+        {
+            if (exponent % 2 == 1)
+            {
+                result.integer = result.integer * base;
+            }
+
+            exponent = exponent / 2;
+
+            // Skip the last unused square, which could overflow needlessly.
+            if (exponent > 0)
+            {
+                base = base * base;
+            }
+        }
+    }
+
+    return result;
+}
+
+// Brackets call the full expression parser so their contents are grouped.
+// Operators cannot start a primary because unary operators are not allowed.
+Value parse_primary(void)
+{
+    Value value = {0, 0, 0.0};
+
     if (error_pos != 0)
     {
-        return 0;
+        return value;
     }
 
     if (token == TOKEN_NUMBER)
     {
-        long long value = token_value;
+        value = token_value;
         next_token();
         return value;
     }
@@ -194,169 +357,105 @@ long long parse_primary(void)
     if (token == '(')
     {
         next_token();
-        long long value = parse_expression();
+        value = parse_expression();
 
         if (error_pos != 0)
         {
-            return 0;
+            return value;
         }
 
         if (token != ')')
         {
             error_pos = token_pos + 1;
-            return 0;
+            return value;
         }
 
         next_token();
         return value;
     }
 
-    // At line end, this gives the newline position.
-    // Without a final newline, it gives file length + 1.
+    // At line end this is the newline position, or file length + 1 at EOF.
     error_pos = token_pos + 1;
-    return 0;
+    return value;
 }
 
-// Calling parse_power for the exponent makes ** right-associative.
-// This means 2**3**2 is calculated as 2**(3**2).
-// A negative exponent is reported at its saved starting position.
-long long parse_power(void)
+// Calling parse_power for the exponent makes 2**3**2 mean 2**(3**2).
+// Saved positions are needed because reading the exponent moves the tokenizer.
+Value parse_power(void)
 {
-    long long value = parse_primary();
+    Value value = parse_primary();
 
     if (error_pos != 0)
     {
-        return 0;
+        return value;
     }
 
     if (token == TOKEN_POWER)
     {
+        size_t operator_start = token_pos;
         next_token();
-        size_t exponent_start = token_pos;
-        long long exponent = parse_power();
-
-        if (error_pos != 0)
-        {
-            return 0;
-        }
-
-        if (exponent < 0)
-        {
-            error_pos = exponent_start + 1;
-            return 0;
-        }
-
-        // Starting with 1 also gives 1 for x**0, including 0**0.
-        long long result = 1;
-
-        // Squaring the base reduces the number of multiplications.
-        while (exponent > 0)
-        {
-            if (exponent % 2 == 1)
-            {
-                result = result * value;
-            }
-
-            exponent = exponent / 2;
-
-            if (exponent > 0)
-            {
-                value = value * value;
-            }
-        }
-
-        return result;
-    }
-
-    return value;
-}
-
-// Powers are read first, so ** has higher priority than * and /.
-// The loop works from left to right, so 20/2/2 means (20/2)/2.
-// Both values are long long, so division follows C integer division.
-long long parse_term(void)
-{
-    long long value = parse_power();
-
-    while (error_pos == 0)
-    {
-        if (token != '*' && token != '/')
-        {
-            break;
-        }
-
-        int op = token;
-        next_token();
-
-        // Save this because parsing the right operand moves forward.
         size_t right_start = token_pos;
-        long long right = parse_power();
+        Value right = parse_power();
 
-        if (error_pos != 0)
+        if (error_pos == 0)
         {
-            return 0;
-        }
-
-        if (op == '*')
-        {
-            value = value * right;
-        }
-        else
-        {
-            if (right == 0)
-            {
-                // Zero division is reported at the right operand's start.
-                error_pos = right_start + 1;
-                return 0;
-            }
-
-            value = value / right;
+            value = calculate(value, right, TOKEN_POWER,
+                              operator_start, right_start);
         }
     }
 
     return value;
 }
 
-// Reading terms first gives * and / higher priority than + and -.
-// The loop makes addition and subtraction work from left to right.
-long long parse_expression(void)
+// Powers are read first so ** has higher priority than * and /.
+// The loop handles * and / from left to right.
+Value parse_term(void)
 {
-    long long value = parse_term();
+    Value value = parse_power();
 
-    while (error_pos == 0)
+    while (error_pos == 0 && (token == '*' || token == '/'))
     {
-        if (token != '+' && token != '-')
-        {
-            break;
-        }
-
         int op = token;
+        size_t operator_start = token_pos;
         next_token();
+        size_t right_start = token_pos;
+        Value right = parse_power();
 
-        long long right = parse_term();
-
-        if (error_pos != 0)
+        if (error_pos == 0)
         {
-            return 0;
-        }
-
-        if (op == '+')
-        {
-            value = value + right;
-        }
-        else
-        {
-            value = value - right;
+            value = calculate(value, right, op, operator_start, right_start);
         }
     }
 
     return value;
 }
 
-// The first pass checks expressions without writing any results.
-// This prevents partial results when a later expression has an error.
-// The second pass writes answers without storing a separate result list.
-// Both passes move forward through the text, so the work stays linear.
+// Terms are read first so * and / have higher priority than + and -.
+// The loop makes subtraction and addition work from left to right.
+Value parse_expression(void)
+{
+    Value value = parse_term();
+
+    while (error_pos == 0 && (token == '+' || token == '-'))
+    {
+        int op = token;
+        size_t operator_start = token_pos;
+        next_token();
+        size_t right_start = token_pos;
+        Value right = parse_term();
+
+        if (error_pos == 0)
+        {
+            value = calculate(value, right, op, operator_start, right_start);
+        }
+    }
+
+    return value;
+}
+
+// The first pass checks all lines so a later error leaves no partial results.
+// The second pass writes answers without keeping a separate result list.
+// Both passes use the same text, so large lines are not copied repeatedly.
 int evaluate_text(char *text, size_t length, FILE *output)
 {
     text_data = text;
@@ -377,12 +476,11 @@ int evaluate_text(char *text, size_t length, FILE *output)
 
             skip_spaces();
 
-            // Blank and comment lines give no result.
-            // Their characters still count because the text is not changed.
+            // Skipped lines stay in the text so their characters still count.
             if (pos < line_end && text_data[pos] != '#')
             {
                 next_token();
-                long long result = parse_expression();
+                Value result = parse_expression();
 
                 if (error_pos == 0 && token != TOKEN_END)
                 {
@@ -398,13 +496,24 @@ int evaluate_text(char *text, size_t length, FILE *output)
                         return 1;
                     }
 
-                    // An expression error is a normal result.
+                    // An expression error is a normal result, so return zero.
                     return 0;
                 }
 
                 if (pass == 1)
                 {
-                    if (fprintf(output, "%lld\n", result) < 0)
+                    int written;
+
+                    if (result.is_float)
+                    {
+                        written = fprintf(output, "%.15g\n", result.real);
+                    }
+                    else
+                    {
+                        written = fprintf(output, "%lld\n", result.integer);
+                    }
+
+                    if (written < 0)
                     {
                         perror("Output");
                         return 1;
