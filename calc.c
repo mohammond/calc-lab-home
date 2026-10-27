@@ -1,7 +1,7 @@
 // Berkay Samet Aygunduz 251ADB082
 // https://github.com/mohammond/calc-lab-home
 // Compile with: gcc -O2 -Wall -Wextra -std=c17 -o calc calc.c -lm
-// Resources used: geeksforgeeks.org, https://www.learn-c.org/, OpenAI ChatGPT.
+// Resources used: geeksforgeeks.org; learn-c.org; OpenAI ChatGPT; GNU C Library Manual.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,6 +18,10 @@ int usage(void)
     fprintf(stderr, "Usage: calc [-d DIR] [-o OUTDIR] [input.txt]\n");
     return 1;
 }
+
+// Prompt: "my input file can have very long lines how can i read it with malloc realloc and fgetc also i need to skip empty lines and lines starting with # but still count every character including comments and newline for error positions can you show small example"
+// Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
+// Additional reading: https://www.learn-c.org/en/Dynamic_allocation
 
 // The buffer doubles when full, so large files need fewer allocations.
 // The parser uses the same text without copying each line or token.
@@ -129,6 +133,9 @@ void skip_spaces(void)
     }
 }
 
+// Prompt: "how can i make tokenizer and parser in c with operator priority and error positions"
+// Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
+
 // Saving the token start lets errors use it after the parser moves forward.
 // Numbers are checked before conversion so .5, 5. and 1.5e3 are not accepted.
 void next_token(void)
@@ -234,6 +241,11 @@ double as_double(Value value)
 
     return (double)value.integer;
 }
+
+// Documentation checked during review: GNU C Library Manual.
+// Checked pow for floating-point powers and isfinite for invalid results.
+// https://sourceware.org/glibc/manual/latest/html_node/Exponents-and-Logarithms.html
+// https://sourceware.org/glibc/manual/latest/html_node/Floating-Point-Classes.html
 
 // Integer operands keep integer arithmetic; either float makes a double result.
 // Zero division uses the right operand's start, including an opening bracket.
@@ -606,6 +618,13 @@ int process_file(char *file, char *out)
     return status;
 }
 
+// Documentation checked during review: GNU C Library Manual.
+// Checked readdir error handling and why file names need their own copies.
+// https://sourceware.org/glibc/manual/2.42/html_node/Reading_002fClosing-Directory.html
+//
+// Additional reading: GeeksforGeeks, listing files in a directory.
+// https://www.geeksforgeeks.org/c/c-program-list-files-sub-directories-directory/
+
 // Keeps only regular .txt files directly inside the input folder.
 // Saves paths before writing so new output files are not processed again.
 // The list grows when needed, so there is no fixed limit on file count.
@@ -750,6 +769,8 @@ int main(int argc, char *argv[])
     char *dir = NULL;
     char *out = NULL;
 
+    // Prompt: "i want to make arithmetic parser in c my program need to read input filename and -d or --dir for input folder and -o or --output-dir for output folder how can i use argc argv and strcmp for this can you explain with small example"
+    // Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
     for (int i = 1; i < argc; i++)
     {
         if (strcmp(argv[i], "-d") == 0 ||
@@ -829,6 +850,8 @@ int main(int argc, char *argv[])
     char base[4096];
     char default_out[4096];
 
+    // Prompt: "if -o is missing i need to create output folder using input filename without .txt and my name and student id for -d i need to use folder name how can i do this with strlen strrchr and snprintf also folder path can end with /"
+    // Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
     if (out == NULL)
     {
         char *source = file;
@@ -893,6 +916,8 @@ int main(int argc, char *argv[])
         out = default_out;
     }
 
+    // Prompt: "bro how can i use fopen to check input file and opendir to check input folder in c also how can i create output folder with mkdir and use it if it already exists can you show small example with error checks"
+    // Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
     if (mkdir(out, 0755) != 0 && errno != EEXIST)
     {
         perror(out);
