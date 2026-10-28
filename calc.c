@@ -99,6 +99,9 @@ char *read_file(char *file, size_t *length)
     return text;
 }
 
+// Prompt: "how can i handle integers and floats, read txt files from a folder and save results in c can you show small examples"
+// Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
+
 // The type is kept with the value so integer division still works as in C.
 // A calculation uses double only when at least one operand is a float.
 typedef struct
@@ -242,7 +245,6 @@ double as_double(Value value)
     return (double)value.integer;
 }
 
-// Documentation checked during review: GNU C Library Manual.
 // Checked pow for floating-point powers and isfinite for invalid results.
 // https://sourceware.org/glibc/manual/latest/html_node/Exponents-and-Logarithms.html
 // https://sourceware.org/glibc/manual/latest/html_node/Floating-Point-Classes.html
@@ -545,6 +547,9 @@ int evaluate_text(char *text, size_t length, FILE *output)
     return 0;
 }
 
+// Prompt: "how can i handle integers and floats, read txt files from a folder and save results in c can you show small examples"
+// Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
+
 // Adds my name and ID to follow the required output file format.
 // Input is read before output is opened, so writing cannot change the parsed text.
 // Replacing output removes results left from an earlier run.
@@ -617,6 +622,9 @@ int process_file(char *file, char *out)
     free(text);
     return status;
 }
+
+// Prompt: "how can i handle integers and floats, read txt files from a folder and save results in c can you show small examples"
+// Link: https://chatgpt.com/share/6ae0ecea-dd94-83eb-ac86-16d7f3797964
 
 // Documentation checked during review: GNU C Library Manual.
 // Checked readdir error handling and why file names need their own copies.
